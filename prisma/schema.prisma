@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+model Invite {
+  id        String   @id @default(cuid())
+  codeHash  String   @unique
+  maxUses   Int      @default(20)
+  uses      Int      @default(0)
+  expiresAt DateTime
+  disabled  Boolean  @default(false)
+}
+model Visitor {
+  id            String         @id @default(cuid())
+  tokenHash     String         @unique
+  createdAt     DateTime       @default(now())
+  expiresAt     DateTime
+  conversations Conversation[]
+}
+model Conversation {
+  id        String   @id @default(cuid())
+  visitorId String
+  visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime
+  needs     Json     @default("{}")
+  asks      Int      @default(0)
+  messages  Message[]
+  items     UserItem[]
+  snapshots Snapshot[]
+  @@index([visitorId, updatedAt])
+}
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  createdAt      DateTime     @default(now())
+}
+model Product {
+  id       String @id
+  name     String
+  category String
+  specs    Json
+  offers   Offer[]
+}
+model Offer {
+  id         String   @id
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  payload    Json
+  verifiedAt DateTime
+  isDemo     Boolean  @default(false)
+}
+model UserItem {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  payload        Json
+  createdAt      DateTime     @default(now())
+}
+model Snapshot {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  payload        Json
+  createdAt      DateTime     @default(now())
+  feedback       Feedback?
+}
+model Feedback {
+  id         String   @id @default(cuid())
+  snapshotId String   @unique
+  snapshot   Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  helpful    Boolean
+  reason     String?
+  chosenId   String?
+  paidFen    Int?
+  createdAt  DateTime @default(now())
+}
+model RateBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+}

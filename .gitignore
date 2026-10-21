@@ -10,3 +10,9 @@ coverage/
 __pycache__/
 *.py[cod]
 *.log
+.next/
+*.tsbuildinfo
+test-results/
+playwright-report/
+*.dump
+.local/
