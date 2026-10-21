@@ -10,11 +10,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params;
     const { user } = await ownedConversation(id);
     await limited(`items:${user.id}`, 20, 86400000);
-    if (await db.userItem.count({ where: { conversationId: id } }) >= 10) throw new ApiError(400, "每次选购最多补充 10 个商品");
     const raw = await body(request, userItemSchema);
     const itemId = `user-${randomUUID()}`;
     const offer = offerSchema.parse({ ...raw, id: itemId, productId: itemId, provenance: "user", verifiedAt: new Date().toISOString() });
-    await db.userItem.create({ data: { conversationId: id, payload: offer as unknown as Prisma.InputJsonValue } });
+    await db.$transaction(async tx => {
+      // Serialize additions to this conversation, including the count check.
+      const rows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Conversation" WHERE "id" = ${id} FOR UPDATE`;
+      if (!rows.length) throw new ApiError(404, "记录不存在或已删除");
+      if (await tx.userItem.count({ where: { conversationId: id } }) >= 10) throw new ApiError(400, "每次选购最多补充 10 个商品");
+      await tx.userItem.create({ data: { conversationId: id, payload: offer as unknown as Prisma.InputJsonValue } });
+    });
     return { offer };
   });
 }

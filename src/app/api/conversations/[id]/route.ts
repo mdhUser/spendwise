@@ -7,11 +7,11 @@ export async function GET(_request: Request, context: Context) {
     const { id } = await context.params;
     await ownedConversation(id);
     const conversation = await db.conversation.findUnique({ where: { id }, include: {
-      messages: { orderBy: { createdAt: "asc" }, take: 100 },
+      messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 },
       snapshots: { orderBy: { createdAt: "desc" }, take: 1, include: { feedback: true } },
       items: { orderBy: { createdAt: "asc" } },
     } });
-    return { conversation };
+    return { conversation: conversation ? { ...conversation, messages: conversation.messages.reverse() } : null };
   });
 }
 export async function DELETE(request: Request, context: Context) {

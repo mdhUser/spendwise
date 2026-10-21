@@ -188,3 +188,31 @@ test("catalog CSV import validates the whole batch before updating prices", asyn
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("history returns the newest 100 messages in chronological order", async ({ request }) => {
+  await unlock(request);
+  const { id } = await (await request.post("/api/conversations", { headers: headers() })).json();
+  await db.message.createMany({ data: Array.from({ length: 102 }, (_, i) => ({ conversationId: id, role: "user", content: `message-${i}`, createdAt: new Date(1700000000000 + i * 1000) })) });
+  const response = await request.get(`/api/conversations/${id}`);
+  const messages = (await response.json()).conversation.messages;
+  expect(messages).toHaveLength(100);
+  expect(messages[0].content).toBe("message-2");
+  expect(messages.at(-1).content).toBe("message-101");
+});
+test("concurrent item additions cannot exceed ten items", async ({ request }) => {
+  await unlock(request);
+  const { id } = await (await request.post("/api/conversations", { headers: headers() })).json();
+  const item = { name: "并发测试商品", category: "tissue", specs: { amount: 600, unit: "draw", pack: "100抽×6包", layers: 3, widthMm: 180, heightMm: 130, concentrated: null, fragranceFree: true }, priceFen: 100, shippingFen: 0, discount: null, sourceUrl: "https://example.com/item", sourceLabel: "用户提供" };
+  await db.userItem.createMany({ data: Array.from({ length: 9 }, () => ({ conversationId: id, payload: item })) });
+  // Widen the read/insert race in the isolated test DB, not in production code.
+  await db.$executeRawUnsafe('CREATE OR REPLACE FUNCTION test_delay_item() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.2); RETURN NEW; END $$');
+  await db.$executeRawUnsafe('CREATE TRIGGER test_delay_item BEFORE INSERT ON "UserItem" FOR EACH ROW EXECUTE FUNCTION test_delay_item()');
+  try {
+    const responses = await Promise.all(Array.from({ length: 3 }, () => request.post(`/api/conversations/${id}/items`, { headers: headers(), data: item })));
+    expect(responses.filter(r => r.status() === 200)).toHaveLength(1);
+    expect(responses.filter(r => r.status() === 400)).toHaveLength(2);
+    expect(await db.userItem.count({ where: { conversationId: id } })).toBe(10);
+  } finally {
+    await db.$executeRawUnsafe('DROP TRIGGER test_delay_item ON "UserItem"');
+    await db.$executeRawUnsafe('DROP FUNCTION test_delay_item()');
+  }
+});
