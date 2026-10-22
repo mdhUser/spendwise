@@ -48,7 +48,7 @@ export type ProviderResult={platform:Platform;status:PlatformStatus;offers:Norma
 export type ProviderCapabilities={search:boolean;details:boolean;shipping:boolean;inventory:boolean;purchaseLink:boolean;cacheMaxAgeMs:number|null};
 export type CallKind='search'|'detail'|'model';
 export interface CallBudget {take(kind:CallKind):boolean;remaining(kind:CallKind):number}
-export interface SearchContext {signal:AbortSignal;deadlineAt:number;budget:CallBudget;visitorId:string;now:()=>number;reserve?:(platform:Platform,kind:CallKind)=>Promise<boolean>}
+export interface SearchContext {signal:AbortSignal;deadlineAt:number;budget:CallBudget;visitorId:string;now:()=>number;model?:(system:string,payload:unknown,signal:AbortSignal)=>Promise<unknown>;reserve?:(platform:Platform,kind:CallKind)=>Promise<boolean>}
 export type PurchaseLinkResult={url:string|null;status:PlatformStatus};
 export interface PlatformProvider {platform:Platform;capabilities:ProviderCapabilities;search(query:SearchQuery,ctx:SearchContext):Promise<ProviderResult>;getDetails(refs:OfferRef[],ctx:SearchContext):Promise<ProviderResult>;getPurchaseLink?(ref:OfferRef,ctx:SearchContext):Promise<PurchaseLinkResult>}
 export type PricedCandidate={id:string;offer:NormalizedOffer;packs:number;knownCostFen:number;totalFen:number|null;unitPriceFen:number|null;pending:string[];evidenceIds:string[];comparableKey:string|null;refreshed:boolean};
