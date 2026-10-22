@@ -32,6 +32,7 @@ model Conversation {
   messages  Message[]
   items     UserItem[]
   snapshots Snapshot[]
+  searchRuns SearchRun[]
   @@index([visitorId, updatedAt])
 }
 model Message {
@@ -71,6 +72,8 @@ model Snapshot {
   payload        Json
   createdAt      DateTime     @default(now())
   feedback       Feedback?
+  searchRunId    String?
+  searchRun      SearchRun? @relation(fields: [searchRunId], references: [id], onDelete: SetNull)
 }
 model Feedback {
   id         String   @id @default(cuid())
@@ -86,4 +89,23 @@ model RateBucket {
   key       String   @id
   count     Int      @default(0)
   expiresAt DateTime
+}
+
+model SearchRun {
+  id String @id @default(cuid())
+  conversationId String
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  startedAt DateTime
+  finishedAt DateTime
+  platformStatus Json
+  evidence SearchEvidence[]
+  snapshots Snapshot[]
+  @@index([conversationId])
+}
+model SearchEvidence {
+  id String @id @default(cuid())
+  searchRunId String
+  searchRun SearchRun @relation(fields: [searchRunId], references: [id], onDelete: Cascade)
+  payload Json
+  @@index([searchRunId])
 }

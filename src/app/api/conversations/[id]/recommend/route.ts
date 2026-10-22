@@ -2,11 +2,18 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { api, body } from "@/lib/http";
-import { checkOrigin, ipKey, limited, ownedConversation } from "@/lib/security";
+import { ApiError, checkOrigin, ipKey, limited, ownedConversation } from "@/lib/security";
 import { needsSchema, needsPatchSchema, offerSchema, recommend, categoryNames } from "@/lib/domain";
 import { extractNeeds } from "@/lib/model";
 import { catalog } from "@/lib/catalog";
-const inputSchema = z.object({ message: z.string().trim().max(2000).default(""), needs: needsPatchSchema.default({}) }).strict();
+import { shoppingNeedsPatchSchema } from '@/lib/shopping/contracts';
+import { prepareShopping } from '@/lib/shopping/planner';
+import { createSearchContext } from '@/lib/shopping/runtime';
+import { createProviders } from '@/lib/shopping/providers';
+import { readProviderConfig } from '@/lib/shopping/provider-config';
+import { runShopping } from '@/lib/shopping/orchestrator';
+import { saveSearchOutcome } from '@/lib/shopping/repository';
+const inputSchema = z.object({ message: z.string().trim().max(2000).default(""), needs: z.record(z.string(), z.unknown()).default({}), sourceMode: z.enum(["official", "manual"]).default("official") }).strict();
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return api(async () => {
     checkOrigin(request);
@@ -15,10 +22,33 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await limited(`recommend:${user.id}`, 10);
     await limited(`recommend-ip:${ipKey(request)}`, 60);
     const input = await body(request, inputSchema);
-    const previous = needsPatchSchema.safeParse(conversation.needs);
+    if (input.sourceMode === 'official') {
+      const checked = shoppingNeedsPatchSchema.safeParse(input.needs);
+      if (!checked.success) throw new ApiError(400, '输入格式有误，请检查金额与规格');
+      const explicit = checked.data;
+      const stored = typeof conversation.needs === 'object' && conversation.needs !== null ? conversation.needs : {};
+      const legacyCompatible = Object.fromEntries(Object.entries(stored).filter(([key]) => key in shoppingNeedsPatchSchema.shape));
+      const previous = shoppingNeedsPatchSchema.safeParse(legacyCompatible);
+      const ctx = createSearchContext(user.id, request.signal);
+      const prepared = await prepareShopping(input.message, previous.success ? previous.data : {}, ctx, explicit);
+      if (!prepared.needs) {
+        const clarification = '请补充商品品类和总预算，即可查询官方平台。';
+        await db.conversation.update({where:{id}, data:{needs:prepared.draft as Prisma.InputJsonValue, asks:{increment:1}, messages:{create:[{role:'user',content:input.message || '开始搜索'},{role:'assistant',content:clarification}]}}});
+        return {clarification,needs:prepared.draft,mode:'等待补充选购需求'};
+      }
+      const providers = createProviders(readProviderConfig(process.env), {fetch, accessApproved:process.env.TAOBAO_ACCESS_APPROVED === 'true'});
+      const shopping = await runShopping({message:input.message,needs:prepared.needs,queries:prepared.queries},providers,ctx);
+      const saved = await saveSearchOutcome(id,shopping,input.message || '根据表单搜索');
+      return {...saved,shopping,mode:shopping.mode === 'model' ? 'AI 已比较候选，金额由程序核算' : '官方平台查询 · 规则比较（AI 未启用或降级）'};
+    }
+    const checkedManual = needsPatchSchema.safeParse(input.needs);
+    if (!checkedManual.success) throw new ApiError(400, '输入格式有误，请检查金额与规格');
+    const manualNeeds = checkedManual.data;
+    const storedManual = typeof conversation.needs === 'object' && conversation.needs !== null ? Object.fromEntries(Object.entries(conversation.needs).filter(([key]) => key in needsPatchSchema.shape)) : {};
+    const previous = needsPatchSchema.safeParse(storedManual);
     const current = previous.success ? previous.data : {};
     const model = input.message ? await extractNeeds(input.message, user.id, current) : { needs: {}, mode: "使用表单与规则比较" };
-    const merged = { ...current, ...model.needs, ...input.needs };
+    const merged = { ...current, ...model.needs, ...manualNeeds };
     const parsed = needsSchema.safeParse(merged);
     if (!parsed.success) {
       const reply = conversation.asks >= 1
