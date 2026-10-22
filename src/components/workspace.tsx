@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { ShoppingResults } from './shopping-results';
 import { ShoppingPreferences } from './shopping-preferences';
-import { platforms, type SearchOutcome, type ShoppingNeeds } from '@/lib/shopping/contracts';
+import { platforms, type SearchOutcome, type ShoppingNeedsPatch } from '@/lib/shopping/contracts';
 import { selectFormOverrides } from "@/lib/form";
 import { useEffect, useState, type FormEvent } from "react";
 import { categoryNames, money, type Category, type Needs, type Offer, type Recommendation, type Quote } from "@/lib/domain";
@@ -38,7 +38,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [category, setCategory] = useState<Category | "">("");
   const [budget, setBudget] = useState("");
   const [message, setMessage] = useState("");
-  const [draftNeeds, setDraftNeeds] = useState<Partial<Needs> & Partial<ShoppingNeeds>>({});
+  const [draftNeeds, setDraftNeeds] = useState<Partial<Needs> & ShoppingNeedsPatch>({});
   const [touched, setTouched] = useState<string[]>([]);
   const [formKey, setFormKey] = useState(0);
 
@@ -106,7 +106,11 @@ export default function Workspace({ demo }: { demo: boolean }) {
       if (include('allowStockpile')) officialNeeds.allowStockpile = data.get('allowStockpile') === 'on';
       if (include('maxPacks')) officialNeeds.maxPacks = data.get('maxPacks') ? Number(data.get('maxPacks')) : null;
       if (include('targetValue') || include('targetUnit')) officialNeeds.targetAmount = data.get('targetValue') ? {value:Number(data.get('targetValue')),unit:data.get('targetUnit')} : null;
-      if (!message.trim() || touched.some(k=>platforms.some(p=>k.startsWith(p+'_')))) officialNeeds.eligibility = Object.fromEntries(platforms.map(p=>[p,{member:yesNo(data.get(p+'_member')),firstOrder:yesNo(data.get(p+'_firstOrder'))}]));
+      const eligibility = Object.fromEntries(platforms.flatMap(p=>{
+        const fields = Object.fromEntries(['member','firstOrder'].filter(field=>include(p+'_'+field)).map(field=>[field,yesNo(data.get(p+'_'+field))]));
+        return Object.keys(fields).length ? [[p,fields]] : [];
+      }));
+      if (Object.keys(eligibility).length) officialNeeds.eligibility = eligibility;
       const response = await request<{ recommendation?: Recommendation; shopping?:SearchOutcome; snapshotId?: string; clarification?: string; mode: string; needs?: Record<string, unknown> }>(`/api/conversations/${id}/recommend`, 'POST', { message, sourceMode, needs: sourceMode === 'official' ? officialNeeds : base });
       setMode(response.mode);
       setMessages(previous => [...previous, { role: 'user', content: message || '根据表单比较方案' }, { role: 'assistant', content: response.clarification ?? response.shopping?.warnings.join(' ') ?? response.recommendation?.explanation ?? '' }]);

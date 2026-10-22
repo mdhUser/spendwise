@@ -30,3 +30,13 @@ it('requires explicit stockpile limits and rejects stale/future quotes as confir
  expect(priceOffer(offer({fetchedAt:new Date(now+1).toISOString()}),needs,1,now)).toBeNull();
  expect(priceOffer(offer({fetchedAt:new Date(now-300001).toISOString()}),needs,1,now)?.totalFen).toBeNull();
 });
+it('compares exact unit ratios even when displayed unit prices round to the same fen',()=>{
+ const a=offer({priceFen:100,specs:{...offer().specs,amount:1000}});
+ const b=offer({ref:{...offer().ref,productId:'better-unit'},priceFen:200,specs:{...offer().specs,amount:2100}});
+ const c=buildCandidates([a,b],needs,now);
+ expect(c[0].unitPriceFen).toBe(c[1].unitPriceFen);
+ expect(rankByRules(c,needs).find(d=>d.kind==='lowest_unit')?.candidateId).toBe(c[1].id);
+});
+it('treats maxPacks as a hard ceiling even without optional stockpiling',()=>{
+ expect(buildCandidates([offer()],{...needs,maxPacks:2,targetAmount:{value:300,unit:'draw'}},now)).toHaveLength(0);
+});

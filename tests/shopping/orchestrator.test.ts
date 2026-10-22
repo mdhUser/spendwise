@@ -43,3 +43,8 @@ it('retains every selected candidate when the result payload is capped',async()=
  expect(out.decision.length).toBeGreaterThan(1);
  expect(out.decision.every(d=>out.candidates.some(c=>c.id===d.candidateId))).toBe(true);
 });
+it('rejects refreshed packages that cannot meet the target within maxPacks',async()=>{
+ const changed=offer({priceFen:100,specs:{...offer().specs,amount:50}});
+ const out=await runShopping({message:'',needs:{...needs,allowStockpile:true,maxPacks:2,targetAmount:{value:200,unit:'draw'}}},[provider({getDetails:async()=>result([changed])})],context());
+ expect(out.candidates).toHaveLength(0);expect(out.decision).toHaveLength(0);
+});

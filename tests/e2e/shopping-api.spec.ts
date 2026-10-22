@@ -24,3 +24,11 @@ test('official snapshots reject invented feedback choices without server error',
  const id=await start(request);const search=await (await request.post(`/api/conversations/${id}/recommend`,{headers:headers(),data:{needs:{category:'tissue',budgetFen:5000}}})).json();
  const feedback=await request.post(`/api/conversations/${id}/feedback`,{headers:headers(),data:{snapshotId:search.snapshotId,helpful:true,chosenId:'invented'}});expect(feedback.status()).toBe(400);
 });
+test('preserves platform-specific eligibility through partial clarification and update',async({request})=>{
+ const id=await start(request);
+ const first=await request.post(`/api/conversations/${id}/recommend`,{headers:headers(),data:{needs:{category:'tissue',eligibility:{taobao:{firstOrder:true},jd:{member:true}}}}});
+ expect(first.status()).toBe(200);expect((await first.json()).clarification).toBeTruthy();
+ const response=await request.post(`/api/conversations/${id}/recommend`,{headers:headers(),data:{needs:{budgetFen:5000,eligibility:{taobao:{member:true}}}}});
+ expect(response.status()).toBe(200);const value=await response.json();
+ expect(value.shopping.needs.eligibility.taobao).toEqual({member:true,firstOrder:true});expect(value.shopping.needs.eligibility.jd).toEqual({member:true,firstOrder:null});
+});

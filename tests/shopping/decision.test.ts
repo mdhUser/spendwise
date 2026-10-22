@@ -23,3 +23,19 @@ it('finds the unit-cost winner across all candidates, beyond the model projectio
  const chosen=await chooseDecision(needs,candidates,context());
  expect(chosen.decision.find(d=>d.kind==='lowest_unit')?.candidateId).toBe(candidates[24].id);
 });
+it('preserves unspecified eligibility during model and explicit partial updates',async()=>{
+ const current={...needs,eligibility:{...needs.eligibility,taobao:{member:false,firstOrder:true},jd:{member:true,firstOrder:false}}};
+ const ctx=context();ctx.model=async()=>({needs:{eligibility:{taobao:{member:true},jd:{},pdd:{}}},queries:[]});
+ const planned=await prepareShopping('淘宝会员已确认',current,ctx);
+ expect(planned.needs?.eligibility.taobao).toEqual({member:true,firstOrder:true});
+ expect(planned.needs?.eligibility.jd).toEqual({member:true,firstOrder:false});
+ const overridden=await prepareShopping('淘宝会员已确认',current,ctx,{eligibility:{jd:{member:false}}});
+ expect(overridden.needs?.eligibility.taobao).toEqual({member:true,firstOrder:true});
+ expect(overridden.needs?.eligibility.jd).toEqual({member:false,firstOrder:false});
+});
+it('rejects model selections outside the candidates supplied to that model call',async()=>{
+ const items=Array.from({length:25},(_,i)=>offer({ref:{...offer().ref,productId:String(i)},priceFen:100+i,specs:{...offer().specs,amount:i===24?1000:100}}));
+ const candidates=buildCandidates(items,needs,now);const ctx=context();
+ ctx.model=async()=>({decision:[{candidateId:candidates[23].id,kind:'best_match',reason:'选这个',evidenceIds:['e1']}]});
+ expect((await chooseDecision(needs,candidates,ctx)).mode).toBe('rules');
+});

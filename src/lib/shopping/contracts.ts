@@ -13,14 +13,15 @@ export const shoppingNeedsSchema = needsSchema.omit({member:true,firstOrder:true
   regionCode:z.string().trim().max(80).nullable().default(null),
   eligibility:z.object({taobao:eligibility.default({member:null,firstOrder:null}),jd:eligibility.default({member:null,firstOrder:null}),pdd:eligibility.default({member:null,firstOrder:null})}).strict().default({taobao:{member:null,firstOrder:null},jd:{member:null,firstOrder:null},pdd:{member:null,firstOrder:null}}),
 }).strict();
-// Zod .partial retains field defaults: unwrap defaults for patches.
+// Patches must be default-free at every level so omitted qualifications survive.
+const eligibilityPatch=z.object({member:z.boolean().nullable(),firstOrder:z.boolean().nullable()}).partial().strict();
 export const shoppingNeedsPatchSchema = z.object({
   category:categorySchema, budgetFen:shoppingNeedsSchema.shape.budgetFen,
   quantity:shoppingNeedsSchema.shape.quantity.removeDefault(), minLayers:shoppingNeedsSchema.shape.minLayers.removeDefault(),
   fragranceFree:shoppingNeedsSchema.shape.fragranceFree.removeDefault(), baselineId:shoppingNeedsSchema.shape.baselineId.removeDefault(),
   brands:shoppingNeedsSchema.shape.brands.removeDefault(), allowStockpile:shoppingNeedsSchema.shape.allowStockpile.removeDefault(),
   maxPacks:shoppingNeedsSchema.shape.maxPacks.removeDefault(), targetAmount:shoppingNeedsSchema.shape.targetAmount.removeDefault(),
-  regionCode:shoppingNeedsSchema.shape.regionCode.removeDefault(), eligibility:shoppingNeedsSchema.shape.eligibility.removeDefault(),
+  regionCode:shoppingNeedsSchema.shape.regionCode.removeDefault(), eligibility:z.object({taobao:eligibilityPatch,jd:eligibilityPatch,pdd:eligibilityPatch}).partial().strict(),
 }).partial().strict();
 export type ShoppingNeeds=z.infer<typeof shoppingNeedsSchema>;
 export type ShoppingNeedsPatch=z.infer<typeof shoppingNeedsPatchSchema>;
