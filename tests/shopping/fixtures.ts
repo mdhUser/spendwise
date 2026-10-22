@@ -1,0 +1,8 @@
+import {shoppingNeedsSchema,type NormalizedOffer,type Evidence,type ProviderResult,type PlatformProvider,type SearchContext,emptyResult} from '../../src/lib/shopping/contracts';
+import {createCallBudget} from '../../src/lib/shopping/budget';
+export const now=Date.parse('2026-10-22T08:00:00Z');
+export const needs=shoppingNeedsSchema.parse({category:'tissue',budgetFen:5000});
+export function offer(patch:Partial<NormalizedOffer>={}):NormalizedOffer{return {ref:{platform:'taobao',productId:'one',skuId:'sku1'},shopId:'shop',name:'模拟抽纸',brand:'品牌',category:'tissue',specs:{amount:100,unit:'draw',pack:'1包',layers:3,widthMm:180,heightMm:180,concentrated:null,fragranceFree:true},priceKind:'exact',priceFen:1200,currency:'CNY',shippingFen:0,stock:'available',sourceUrl:'https://item.taobao.com/item.htm?id=1',fetchedAt:new Date(now).toISOString(),discounts:[],evidenceIds:['e1'],...patch};}
+export function result(offers:NormalizedOffer[]=[offer()]):ProviderResult{return {...emptyResult('taobao','success',now),offers,evidence:offers.flatMap(o=>o.evidenceIds.map(id=>({id,platform:o.ref.platform,field:'priceFen',value:o.priceFen,sourceUrl:o.sourceUrl,fetchedAt:o.fetchedAt,origin:'api'} as Evidence)))};}
+export function context():SearchContext{return {now:()=>now,deadlineAt:now+45000,signal:new AbortController().signal,budget:createCallBudget(),visitorId:'test'};}
+export function provider(overrides:Partial<PlatformProvider>={}):PlatformProvider{return {platform:'taobao',capabilities:{search:true,details:true,shipping:false,inventory:false,purchaseLink:false,cacheMaxAgeMs:null},search:async()=>result(),getDetails:async()=>result(),...overrides};}
