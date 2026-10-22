@@ -7,7 +7,7 @@ const keys = {
   jd: ['JD_APP_KEY', 'JD_APP_SECRET', 'JD_SITE_ID'],
   pdd: ['PDD_CLIENT_ID', 'PDD_CLIENT_SECRET', 'PDD_PID'],
 } as const;
-export function readProviderConfig(env: NodeJS.ProcessEnv): Record<Platform, ProviderConfig> {
+export function readProviderConfig(env: Record<string, string | undefined>): Record<Platform, ProviderConfig> {
   return Object.fromEntries(Object.entries(keys).map(([platform, names]) => {
     const missing = names.filter(name => !env[name]?.trim());
     return [platform, missing.length ? { configured: false, missing } : {
