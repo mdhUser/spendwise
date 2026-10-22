@@ -36,7 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         await db.conversation.update({where:{id}, data:{needs:prepared.draft as Prisma.InputJsonValue, asks:{increment:1}, messages:{create:[{role:'user',content:input.message || '开始搜索'},{role:'assistant',content:clarification}]}}});
         return {clarification,needs:prepared.draft,mode:'等待补充选购需求'};
       }
-      const providers = createProviders(readProviderConfig(process.env), {fetch, accessApproved:process.env.TAOBAO_ACCESS_APPROVED === 'true'});
+      const providers = createProviders(readProviderConfig(process.env), {fetch, accessApproved:process.env.TAOBAO_ACCESS_APPROVED === 'true',jdAccessApproved:process.env.JD_ACCESS_APPROVED === 'true'});
       const shopping = await runShopping({message:input.message,needs:prepared.needs,queries:prepared.queries},providers,ctx);
       const saved = await saveSearchOutcome(id,shopping,input.message || '根据表单搜索');
       return {...saved,shopping,mode:shopping.mode === 'model' ? 'AI 已比较候选，金额由程序核算' : '官方平台查询 · 规则比较（AI 未启用或降级）'};

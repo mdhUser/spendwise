@@ -17,7 +17,8 @@
     "invite:create": "node --env-file-if-exists=.env --import tsx scripts/invite.ts",
     "data:cleanup": "node --env-file-if-exists=.env --import tsx scripts/cleanup.ts",
     "db:backup": "bash scripts/backup.sh",
-    "db:restore": "bash scripts/restore.sh"
+    "db:restore": "bash scripts/restore.sh",
+    "platforms:check": "node --env-file-if-exists=.env --import tsx scripts/check-platforms.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

@@ -1,12 +1,15 @@
 "use client";
 import Link from "next/link";
+import { ShoppingResults } from './shopping-results';
+import { ShoppingPreferences } from './shopping-preferences';
+import { platforms, type SearchOutcome, type ShoppingNeeds } from '@/lib/shopping/contracts';
 import { selectFormOverrides } from "@/lib/form";
 import { useEffect, useState, type FormEvent } from "react";
 import { categoryNames, money, type Category, type Needs, type Offer, type Recommendation, type Quote } from "@/lib/domain";
 
 type HistoryItem = { id: string; title: string; updatedAt: string };
 type ChatMessage = { role: string; content: string };
-type Saved = { id: string; payload: Recommendation; feedback: { helpful: boolean } | null };
+type Saved = { id: string; payload: Recommendation | SearchOutcome; feedback: { helpful: boolean } | null };
 type ConversationData = { messages: ChatMessage[]; snapshots: Saved[]; items: { payload: Offer }[]; needs: Record<string, unknown> };
 class RequestError extends Error { constructor(message: string, public status: number) { super(message); } }
 async function request<T>(path: string, method = "GET", payload?: unknown): Promise<T> {
@@ -24,6 +27,8 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [active, setActive] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [result, setResult] = useState<Recommendation | null>(null);
+  const [shopping, setShopping] = useState<SearchOutcome | null>(null);
+  const [sourceMode, setSourceMode] = useState<'official'|'manual'>('official');
   const [snapshotId, setSnapshotId] = useState<string | null>(null);
   const [items, setItems] = useState<Offer[]>([]);
   const [busy, setBusy] = useState(false);
@@ -33,7 +38,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
   const [category, setCategory] = useState<Category | "">("");
   const [budget, setBudget] = useState("");
   const [message, setMessage] = useState("");
-  const [draftNeeds, setDraftNeeds] = useState<Partial<Needs>>({});
+  const [draftNeeds, setDraftNeeds] = useState<Partial<Needs> & Partial<ShoppingNeeds>>({});
   const [touched, setTouched] = useState<string[]>([]);
   const [formKey, setFormKey] = useState(0);
 
@@ -57,7 +62,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
     catch (e) { report(e); } finally { setBusy(false); }
   }
   function reset() {
-    setActive(null); setMessages([]); setResult(null); setSnapshotId(null); setItems([]);
+    setShopping(null); setSourceMode('official'); setActive(null); setMessages([]); setResult(null); setSnapshotId(null); setItems([]);
     setDraftNeeds({}); setFeedback(""); setMode(""); setError(""); setCategory(""); setBudget(""); setMessage(""); setTouched([]); setFormKey(k => k + 1);
   }
   async function ensureConversation() {
@@ -70,7 +75,10 @@ export default function Workspace({ demo }: { demo: boolean }) {
     try {
       const { conversation } = await request<{ conversation: ConversationData }>(`/api/conversations/${id}`);
       setTouched([]); setMessage(""); setActive(id); setDraftNeeds(conversation.needs); setMessages(conversation.messages); setItems(conversation.items.map(i => i.payload));
-      setResult(conversation.snapshots[0]?.payload ?? null); setSnapshotId(conversation.snapshots[0]?.id ?? null);
+      const saved = conversation.snapshots[0]?.payload;
+      const official = saved && 'version' in saved && saved.version === 2 ? saved as SearchOutcome : null;
+      setShopping(official); setSourceMode(official ? 'official' : 'manual');
+      setResult(official ? null : saved as Recommendation ?? null); setSnapshotId(conversation.snapshots[0]?.id ?? null);
       setFeedback(conversation.snapshots[0]?.feedback ? "此方案已提交反馈，可再次更新。" : "");
       setCategory((conversation.needs.category as Category) ?? "");
       setBudget(conversation.needs.budgetFen ? String(Number(conversation.needs.budgetFen) / 100) : "");
@@ -90,17 +98,23 @@ export default function Workspace({ demo }: { demo: boolean }) {
         member: yesNo(data.get("member")), firstOrder: yesNo(data.get("firstOrder")),
         baselineId: data.get("baselineId") ? String(data.get("baselineId")) : null,
       };
-      const response = await request<{ recommendation?: Recommendation; snapshotId?: string; clarification?: string; mode: string; needs?: Record<string, unknown> }>(`/api/conversations/${id}/recommend`, "POST", { message, needs: selectFormOverrides(needs, message, touched) });
+      const base = selectFormOverrides(needs, message, touched);
+      const officialNeeds: Record<string, unknown> = Object.fromEntries(Object.entries(base).filter(([k]) => !['member','firstOrder','baselineId'].includes(k)));
+      const include = (name:string) => !message.trim() || touched.includes(name);
+      if (include('brands')) officialNeeds.brands = String(data.get('brands')??'').split(/[、,，]/).map(s=>s.trim()).filter(Boolean);
+      if (include('regionCode')) officialNeeds.regionCode = data.get('regionCode') || null;
+      if (include('allowStockpile')) officialNeeds.allowStockpile = data.get('allowStockpile') === 'on';
+      if (include('maxPacks')) officialNeeds.maxPacks = data.get('maxPacks') ? Number(data.get('maxPacks')) : null;
+      if (include('targetValue') || include('targetUnit')) officialNeeds.targetAmount = data.get('targetValue') ? {value:Number(data.get('targetValue')),unit:data.get('targetUnit')} : null;
+      if (!message.trim() || touched.some(k=>platforms.some(p=>k.startsWith(p+'_')))) officialNeeds.eligibility = Object.fromEntries(platforms.map(p=>[p,{member:yesNo(data.get(p+'_member')),firstOrder:yesNo(data.get(p+'_firstOrder'))}]));
+      const response = await request<{ recommendation?: Recommendation; shopping?:SearchOutcome; snapshotId?: string; clarification?: string; mode: string; needs?: Record<string, unknown> }>(`/api/conversations/${id}/recommend`, 'POST', { message, sourceMode, needs: sourceMode === 'official' ? officialNeeds : base });
       setMode(response.mode);
-      setMessages(previous => [...previous, { role: "user", content: message || "根据表单比较方案" }, { role: "assistant", content: response.clarification ?? response.recommendation!.explanation }]);
-      if (response.recommendation) {
-        setDraftNeeds(response.recommendation.needs); setResult(response.recommendation); setSnapshotId(response.snapshotId!);
-        setCategory(response.recommendation.needs.category); setBudget(String(response.recommendation.needs.budgetFen / 100));
-      } else {
-        setDraftNeeds(response.needs ?? {}); setResult(null); setSnapshotId(null);
-        if (response.needs?.category) setCategory(response.needs.category as Category);
-        if (response.needs?.budgetFen) setBudget(String(Number(response.needs.budgetFen) / 100));
-      }
+      setMessages(previous => [...previous, { role: 'user', content: message || '根据表单比较方案' }, { role: 'assistant', content: response.clarification ?? response.shopping?.warnings.join(' ') ?? response.recommendation?.explanation ?? '' }]);
+      setShopping(response.shopping ?? null); setResult(response.recommendation ?? null); setSnapshotId(response.snapshotId ?? null);
+      const updated = response.shopping?.needs ?? response.recommendation?.needs ?? response.needs ?? {};
+      setDraftNeeds(updated);
+      if (updated.category) setCategory(updated.category as Category);
+      if (updated.budgetFen) setBudget(String(Number(updated.budgetFen) / 100));
       setMessage(""); setTouched([]); setFormKey(k => k + 1); await refresh();
     } catch (e) { report(e); } finally { setBusy(false); }
   }
@@ -155,7 +169,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
     <main>
       <header className="topbar"><span>你的日常消费助手</span><span className="topbar-right">透明比较 <i /> 理性消费</span></header>
       <div className="content">
-        {demo && <div className="demo-banner" role="note">演示模式 · 下方示例商品与价格不是真实报价，不可作为购买依据。</div>}
+        {demo && <div className="demo-banner" role="note">演示模式 · 手动比较中的示例商品不是真实报价；官方搜索不会使用示例商品补齐结果。</div>}
         {error && <div className="error" role="alert">{error}</div>}
         {access === "loading" ? <div className="loading">正在准备你的选购空间…</div> : access === "locked" ? <section className="welcome">
           <div className="eyebrow">少一点纠结，多一点值得</div><h1>把钱花在<br /><em>真正需要</em>的地方。</h1>
@@ -171,6 +185,7 @@ export default function Workspace({ demo }: { demo: boolean }) {
           <section className="panel planner">
             <div className="section-heading"><h2><span className="spark">✦</span> 你的选购需求</h2><span>从需要出发</span></div>
             <form key={formKey} onSubmit={compare} onChange={e => { const target = e.target; const name = target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.name : ""; if (name) setTouched(t => [...t, name]); }}>
+              <label>比较数据来源<select aria-label="比较数据来源" value={sourceMode} onChange={e=>setSourceMode(e.target.value as 'official'|'manual')} disabled={busy}><option value="official">官方平台搜索（淘宝 / 京东 / 拼多多）</option><option value="manual">手动比较（录入报价 / 演示商品）</option></select></label>
               <label className="sr-only" htmlFor="message">描述选购需求</label>
               <textarea id="message" value={message} onChange={e => setMessage(e.target.value)} maxLength={2000} placeholder="例如：想买家里用的抽纸，预算 50 元，希望至少 3 层。" rows={3} disabled={busy} />
               <div className="form-grid">
@@ -180,17 +195,18 @@ export default function Workspace({ demo }: { demo: boolean }) {
               </div>
               <details className="advanced"><summary>规格偏好与优惠资格 <span>可选</span></summary><div className="form-grid">
                 <label>纸品最低层数<select name="minLayers" defaultValue={draftNeeds.minLayers ?? ""}><option value="">不限</option>{[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n} 层</option>)}</select></label>
-                <label>已确认适用会员价<select name="member" defaultValue={draftNeeds.member === true ? "yes" : draftNeeds.member === false ? "no" : "unknown"}><option value="unknown">不确定</option><option value="yes">是</option><option value="no">否</option></select></label>
+                {sourceMode === 'manual' && <><label>已确认适用会员价<select name="member" defaultValue={draftNeeds.member === true ? "yes" : draftNeeds.member === false ? "no" : "unknown"}><option value="unknown">不确定</option><option value="yes">是</option><option value="no">否</option></select></label>
                 <label>已确认适用首购价<select name="firstOrder" defaultValue={draftNeeds.firstOrder === true ? "yes" : draftNeeds.firstOrder === false ? "no" : "unknown"}><option value="unknown">不确定</option><option value="yes">是</option><option value="no">否</option></select></label>
-                <label className="checkbox"><input name="fragranceFree" type="checkbox" defaultChecked={draftNeeds.fragranceFree} /> 只看已明确无香的商品</label>
+                </>}<label className="checkbox"><input name="fragranceFree" type="checkbox" defaultChecked={draftNeeds.fragranceFree} /> 只看已明确无香的商品</label>
                 <label>比较基准<select name="baselineId" defaultValue={draftNeeds.baselineId ?? ""}><option value="">不计算预计节省</option>{[...new Map([...(result?.quotes.map(q => q.offer) ?? []), ...items].map(o => [o.id, o])).values()].map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-              </div></details>
+              </div>{sourceMode === 'official' && <ShoppingPreferences needs={draftNeeds}/>}</details>
               <div className="form-footer"><span>✧ AI 理解需求，程序核算价格</span><button className="primary" disabled={busy}>{busy ? "正在处理…" : "帮我选一选 →"}</button></div>
             </form>
           </section>
           {mode && <div className="mode" role="status">{mode}</div>}
           {messages.length > 0 && <details className="conversation"><summary>查看本次对话 · {messages.length} 条</summary>{messages.map((m,i) => <div key={i} className={`chat ${m.role}`}><strong>{m.role === "user" ? "你" : "帮你省"}</strong><p>{m.content}</p></div>)}</details>}
-          {!result && messages.at(-1)?.role === "assistant" && <div className="clarification">{messages.at(-1)?.content}</div>}
+          {!result && !shopping && messages.at(-1)?.role === "assistant" && <div className="clarification">{messages.at(-1)?.content}</div>}
+          {shopping && <><ShoppingResults outcome={shopping}/><form className="panel feedback" onSubmit={submitFeedback}><h3>本次搜索对你有帮助吗？</h3><label>你的评价<select name="helpful"><option value="yes">有帮助</option><option value="no">没帮助</option></select></label><label>原因或建议<input name="reason" maxLength={500}/></label><div className="form-footer"><span role="status">{feedback}</span><button className="secondary" disabled={busy}>提交反馈</button></div></form></>}
           {result && <section className="results" aria-label="比较结果"><div className="section-heading"><h2>把选择摆在一起看</h2><span>{result.quotes.length} 个方案 · {new Date(result.createdAt).toLocaleDateString("zh-CN")}</span></div>
             <p className="result-intro">{result.explanation}</p>
             {result.quotes.length === 0 ? <div className="empty-state"><span>⌕</span><h3>暂时没有合适的方案</h3><p>保留你的标准，调整预算或补充商品后再试。</p></div> : <div className="quote-grid">{result.quotes.map((q,i) => <QuoteCard key={q.offer.id} quote={q} index={i} />)}</div>}

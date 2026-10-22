@@ -11,12 +11,11 @@ export async function runShopping(input:{message:string;needs:ShoppingNeeds;quer
  const modelCtx={...ctx,deadlineAt:ctx.deadlineAt-10000};
  const planned=input.queries?{needs:input.needs,queries:input.queries}:await planSearch(input.message,input.needs,modelCtx);
  const needs=planned.needs;
- const failed=()=>providers.map(p=>emptyResult(p.platform,'timeout',ctx.now(),'deadline'));
- let results=await within(searchRound(planned.queries,providers,ctx),rootSignal,failed());
+ let results=await searchRound(planned.queries,providers,ctx);
  let candidates=buildCandidates(results.flatMap(r=>r.offers),needs,ctx.now());
  if(candidates.filter(c=>c.totalFen!==null).length<3&&results.some(r=>r.status==='success'||r.status==='empty')&&ctx.now()<modelCtx.deadlineAt){
   const queries=await planFollowup(needs,results,modelCtx);
-  if(queries.length){const extra=await within(searchRound(queries,providers,ctx),rootSignal,failed());
+  if(queries.length){const extra=await searchRound(queries,providers,ctx);
    results=results.map(r=>{const e=extra.find(x=>x.platform===r.platform)!;return {...r,status:r.status==='success'?r.status:e.status,offers:[...new Map([...r.offers,...e.offers].map(o=>[offerKey(o.ref),o])).values()].slice(0,40),evidence:[...r.evidence,...e.evidence],warnings:[...(r.warnings??[]),...(e.warnings??[])]};});
    candidates=buildCandidates(results.flatMap(r=>r.offers),needs,ctx.now());
   }
@@ -35,9 +34,9 @@ export async function runShopping(input:{message:string;needs:ShoppingNeeds;quer
   const key=offerKey(c.offer.ref);const r=refreshed.get(key);
   const raw=r?.offers.find(o=>offerKey(o.ref)===key);const validation=normalizedOfferSchema.safeParse(raw);
   const replacement=validation.success&&r?.status==='success'&&validation.data.evidenceIds.every(id=>r.evidence.some(e=>e.id===id&&e.platform===c.offer.ref.platform&&e.origin==='api'))?validation.data:null;
-  if(replacement){const updated=buildCandidates([replacement],{...needs,quantity:c.packs,allowStockpile:false,targetAmount:null},ctx.now())[0];
+  if(replacement){const updated=buildCandidates([replacement],{...needs,quantity:c.packs,allowStockpile:false},ctx.now())[0];
    if(!updated){changed=true;return [];}
-   if(updated.totalFen!==c.totalFen||updated.unitPriceFen!==c.unitPriceFen||updated.comparableKey!==c.comparableKey||updated.offer.brand!==c.offer.brand||JSON.stringify(updated.pending)!==JSON.stringify(c.pending))changed=true;
+   if(updated.id!==c.id||updated.totalFen!==c.totalFen||updated.unitPriceFen!==c.unitPriceFen||updated.comparableKey!==c.comparableKey||updated.offer.brand!==c.offer.brand||JSON.stringify(updated.pending)!==JSON.stringify(c.pending))changed=true;
    return [{...updated,refreshed:true}];
   }
   if(choice.decision.some(d=>d.candidateId===c.id)&&c.totalFen!==null)changed=true;
@@ -48,5 +47,5 @@ export async function runShopping(input:{message:string;needs:ShoppingNeeds;quer
  const warnings=['结果仅覆盖本次成功查询的来源；平台销售价可能与个人结算价不同。'];
  if(!candidates.some(c=>c.totalFen!==null))warnings.push('暂无可确认到手价的方案；可查看待确认商品或使用手动比较。');
  results=results.map(r=>({...r,evidence:[...new Map([...r.evidence,...[...refreshed.values()].filter(x=>x.platform===r.platform).flatMap(x=>x.evidence)].map(e=>[e.id,e])).values()]}));
- return {version:2,needs,platformResults:results,candidates:candidates.slice(0,60),decision,mode:changed?'rules':choice.mode,warnings,startedAt,finishedAt:new Date(ctx.now()).toISOString()};
+ return {version:2,needs,platformResults:results,candidates:[...candidates.filter(c=>decision.some(d=>d.candidateId===c.id)),...candidates.filter(c=>!decision.some(d=>d.candidateId===c.id))].slice(0,60),decision,mode:changed?'rules':choice.mode,warnings,startedAt,finishedAt:new Date(ctx.now()).toISOString()};
 }

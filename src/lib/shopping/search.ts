@@ -1,10 +1,11 @@
+import {within} from './model-client';
 import {emptyResult,offerKey,searchQuerySchema,normalizedOfferSchema,evidenceSchema,type PlatformProvider,type ProviderResult,type SearchContext,type SearchQuery} from './contracts';
 // No shared caching until a provider's policy and privacy semantics are verified.
 export async function searchRound(queries:SearchQuery[],providers:PlatformProvider[],ctx:SearchContext):Promise<ProviderResult[]>{
  const validated=queries.slice(0,2).map(q=>searchQuerySchema.parse(q));
  return Promise.all(providers.map(async provider=>{
   if(ctx.signal.aborted||ctx.now()>=ctx.deadlineAt)return emptyResult(provider.platform,'timeout',ctx.now(),'deadline');
-  const results=await Promise.allSettled(validated.map(q=>provider.search(q,ctx)));
+  const results=await Promise.allSettled(validated.map(q=>within(Promise.resolve().then(()=>provider.search(q,ctx)).catch(()=>emptyResult(provider.platform,'error',ctx.now(),'provider_failed')),ctx.signal,emptyResult(provider.platform,'timeout',ctx.now(),'deadline'))));
   const values=results.map(r=>r.status==='fulfilled'?r.value:emptyResult(provider.platform,'error',ctx.now(),'provider_failed'));
   const offers=new Map<string,ProviderResult['offers'][number]>();const evidence=new Map<string,ProviderResult['evidence'][number]>();
   for(const value of values){

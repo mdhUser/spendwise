@@ -4,14 +4,14 @@ export type ProviderConfig = { configured: false; missing: string[] } | {
 };
 const keys = {
   taobao: ['TAOBAO_APP_KEY', 'TAOBAO_APP_SECRET', 'TAOBAO_ADZONE_ID'],
-  jd: ['JD_APP_KEY', 'JD_APP_SECRET', 'JD_SITE_ID'],
+  jd: ['JD_APP_KEY', 'JD_APP_SECRET'],
   pdd: ['PDD_CLIENT_ID', 'PDD_CLIENT_SECRET', 'PDD_PID'],
 } as const;
 export function readProviderConfig(env: Record<string, string | undefined>): Record<Platform, ProviderConfig> {
   return Object.fromEntries(Object.entries(keys).map(([platform, names]) => {
     const missing = names.filter(name => !env[name]?.trim());
     return [platform, missing.length ? { configured: false, missing } : {
-      configured: true, key: env[names[0]]!.trim(), secret: env[names[1]]!.trim(), placement: env[names[2]]!.trim(),
+      configured: true, key: env[names[0]]!.trim(), secret: env[names[1]]!.trim(), placement: names[2] ? env[names[2]]!.trim() : '',
     }];
   })) as Record<Platform, ProviderConfig>;
 }

@@ -20,3 +20,7 @@ test('official clarification preserves quantities and does not silently select m
 test('rejects malformed official needs as input error',async({request})=>{
  const id=await start(request);expect((await request.post(`/api/conversations/${id}/recommend`,{headers:headers(),data:{needs:{budgetFen:-1}}})).status()).toBe(400);
 });
+test('official snapshots reject invented feedback choices without server error',async({request})=>{
+ const id=await start(request);const search=await (await request.post(`/api/conversations/${id}/recommend`,{headers:headers(),data:{needs:{category:'tissue',budgetFen:5000}}})).json();
+ const feedback=await request.post(`/api/conversations/${id}/feedback`,{headers:headers(),data:{snapshotId:search.snapshotId,helpful:true,chosenId:'invented'}});expect(feedback.status()).toBe(400);
+});

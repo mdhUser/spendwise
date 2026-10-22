@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {validateDecision} from '../../src/lib/shopping/decision';
+import {validateDecision,chooseDecision} from '../../src/lib/shopping/decision';
 import {buildCandidates} from '../../src/lib/shopping/pricing';
 import {prepareShopping} from '../../src/lib/shopping/planner';
 import {needs,offer,now,context} from './fixtures';
@@ -16,4 +16,10 @@ it('preserves existing needs on empty patches and requests clarification when in
 it('ignores attempts to inject URLs, arbitrary fields and excessive search queries',async()=>{
  const ctx=context();ctx.model=async()=>({needs:{member:true},queries:[{text:'https://evil.example',category:'tissue',page:1}]});
  const prepared=await prepareShopping('抽纸',needs,ctx);expect(prepared.needs?.eligibility.taobao.member).toBeNull();expect(prepared.queries[0].text).toBe('抽纸');
+});
+it('finds the unit-cost winner across all candidates, beyond the model projection limit',async()=>{
+ const items=Array.from({length:25},(_,i)=>offer({ref:{...offer().ref,productId:String(i)},priceFen:100+i,specs:{...offer().specs,amount:i===24?1000:100}}));
+ const candidates=buildCandidates(items,needs,now);
+ const chosen=await chooseDecision(needs,candidates,context());
+ expect(chosen.decision.find(d=>d.kind==='lowest_unit')?.candidateId).toBe(candidates[24].id);
 });

@@ -1,6 +1,6 @@
 import type { CallKind, PlatformStatus, SearchContext } from './contracts';
 export class ProviderError extends Error {constructor(public status:PlatformStatus,public code:string){super(code);}}
-export type OfficialRequest={platform:'taobao';body:URLSearchParams;kind:Exclude<CallKind,'model'>;fetch:typeof fetch};
+export type OfficialRequest={platform:'taobao'|'jd';body:URLSearchParams;kind:Exclude<CallKind,'model'>;fetch:typeof fetch};
 export async function requestOfficial(input:OfficialRequest,ctx:SearchContext):Promise<unknown>{
   for(let attempt=0;attempt<2;attempt++){
     if(ctx.signal.aborted||ctx.now()>=ctx.deadlineAt)throw new ProviderError('timeout','deadline');
@@ -8,7 +8,7 @@ export async function requestOfficial(input:OfficialRequest,ctx:SearchContext):P
     const timeout=AbortSignal.timeout(Math.max(1,Math.min(8000,ctx.deadlineAt-ctx.now())));
     const signal=AbortSignal.any([ctx.signal,timeout]);
     try{
-      const response=await input.fetch('https://eco.taobao.com/router/rest',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:input.body.toString(),signal,redirect:'error',cache:'no-store'});
+      const response=await input.fetch(input.platform==='taobao'?'https://eco.taobao.com/router/rest':'https://api.jd.com/routerjson',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:input.body.toString(),signal,redirect:'error',cache:'no-store'});
       if(response.status===401||response.status===403)throw new ProviderError('unauthorized','http_authorization');
       if(response.status===429)throw new ProviderError('rate_limited','http_rate_limit');
       if(!response.ok){if(response.status>=500&&attempt===0)continue;throw new ProviderError('error','http_error');}

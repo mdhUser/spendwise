@@ -47,3 +47,13 @@ Specification: the approved SpendWise AI four-week plan in this conversation.
 - Native engine postinstall download initially failed with ECONNRESET. Dependencies were recovered with scripts skipped, then `prisma generate`, migration, seed, build and all tests explicitly executed successfully.
 - Local standalone preview bound to loopback on port 3000; development PostgreSQL on port 55432.
 - No public deployment, provider charge, user invitation message or real purchase performed.
+
+## 官方平台搜索（2026-10-22，开发中）
+
+- 已实现：统一报价与证据结构、淘宝/TOP 与京东/JOS 连接器、并行查询和调用预算、最多两轮搜索、模型选择与规则回退、刷新后重新核算、版本化快照、三平台状态和手机界面。
+- 未完成：拼多多线协议、三个平台真实权限/搜索/详情/结算核对、真实模型评估、20 个跨平台案例；详情缺乏可靠 SKU 计量规格/运费/库存，不能宣称已实现确定最优购买方案。
+- 验证：84 项单元测试，32 项桌面/手机模拟端到端测试；lint、类型检查和生产构建通过。测试中的平台成功响应来自夹具，不是真实调用。
+- 已修复边界：刷新包装量后重新满足总用量；单一来源超时保留其他来源结果；单位价选择覆盖全部候选，输出截断保留入选方案；官方快照反馈校验。
+- 继续使用现有功能分支；保持手动比较兼容。平台默认不缓存、不调用，待账号持有人核实权限与留存条件后配置开关和配额。
+- 规范化报价只使用确定字段，不从商品标题或促销文案猜测优惠/规格；推荐说明由已验证模板生成。代价是可靠信息不足时只显示待确认商品。
+- 独立的购物模型适配器保留旧手动流程，代价是维护两处轻量传输路径。协议测试注入 fetch，未加入生产端点覆盖，真实 HTTP 接入须后续联调。
